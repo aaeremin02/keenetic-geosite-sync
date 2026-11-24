@@ -117,10 +117,16 @@ keenetic-geosite-sync sync
 opkg install cron
 ```
 
-Эта запись в `/opt/etc/crontab` запускает синхронизацию по субботам в 04:00.
+Один раз выполните команду ниже в SSH-терминале. Она добавит в конец `/opt/etc/crontab` задание для запуска от имени `root` по субботам в 04:00 по времени роутера.
 
-```cron
-0 4 * * 6 /opt/bin/keenetic-geosite-sync sync
+```sh
+echo '0 4 * * 6 root /opt/bin/keenetic-geosite-sync sync' >> /opt/etc/crontab
+```
+
+Если cron ещё не запущен, запустите его. [Документация Entware по cron](https://github.com/Entware/Entware/wiki/Using-Cron)
+
+```sh
+/opt/etc/init.d/S10cron start
 ```
 
 ## Очистка и удаление пакета
