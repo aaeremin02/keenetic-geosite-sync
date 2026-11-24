@@ -23,15 +23,13 @@ build_package() {
   local control="$stage/control" data="$stage/data"
   local filename="${package}_${version}-1_${arch}.ipk"
 
-  mkdir -p "$control" "$data/opt/bin" "$data/opt/$package"
+  mkdir -p "$control" "$data/opt/bin"
   local -a target=(CGO_ENABLED=0 GOOS=linux "GOARCH=$goarch")
   if [[ "$goarch" == mipsle ]]; then
     target+=(GOMIPS=softfloat)
   fi
   env "${target[@]}" go build -trimpath -ldflags='-s -w' \
     -o "$data/opt/bin/$package" ./cmd/keenetic-geosite-sync
-  printf '{}\n' > "$data/opt/$package/config.json"
-  chmod 0644 "$data/opt/$package/config.json"
 
   cat > "$control/control" <<CONTROL
 Package: $package
@@ -43,7 +41,7 @@ Priority: optional
 Depends: ca-bundle
 Description: Sync Keenetic DNS object groups from HTTPS lists
 CONTROL
-  printf '/opt/%s/config.json\n' "$package" > "$control/conffiles"
+  install -m 0755 opkg/preinst opkg/postinst "$control/"
   printf '2.0\n' > "$stage/debian-binary"
   tar --owner=0 --group=0 --numeric-owner -C "$control" -czf "$stage/control.tar.gz" .
   tar --owner=0 --group=0 --numeric-owner -C "$data" -czf "$stage/data.tar.gz" .

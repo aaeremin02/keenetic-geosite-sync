@@ -38,7 +38,7 @@ opkg/feed.sh build/check-pages build/check/*_0.0.0-1_aarch64-3.10.ipk build/chec
 
 ## Packaging and releases
 
-- Publish `.ipk` packages for ARM64 and MIPS LE. Package `{}` as the default `config.json`, mark it as an OPKG conffile, and declare the `ca-bundle` dependency.
+- Publish `.ipk` packages for ARM64 and MIPS LE and declare the `ca-bundle` dependency. Keep `config.json` outside the package payload. Create `{}` on installation when the file is missing and preserve configurations from earlier packages during upgrades.
 - A tag in the form `vMAJOR.MINOR.PATCH` sets the package version and triggers `.github/workflows/publish.yml`.
 - Keep GitHub Release publication independent of the optional OPKG feed on GitHub Pages. Enable feed publication with the repository variable `PUBLISH_OPKG_FEED=true`. Pages must use **GitHub Actions** as its source. If the `github-pages` environment restricts deployment, allow release tags.
 - Keep Pages artifact upload and deployment in separate jobs. Pass the uploaded artifact name to deployment so reruns can resolve the correct artifact.

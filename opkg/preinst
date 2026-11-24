@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+[ "${1:-}" = upgrade ] || exit 0
+
+config="${PKG_ROOT%/}/opt/keenetic-geosite-sync/config.json"
+[ -f "$config" ] || [ -L "$config" ] || exit 0
+
+# opkg may remove the config when upgrading from a package that owned it.
+backup=$(mktemp "$config.pre-upgrade.XXXXXX")
+trap 'rm -f "$backup"' EXIT
+cp -pP "$config" "$backup"
+mv -f "$backup" "$config.pre-upgrade"

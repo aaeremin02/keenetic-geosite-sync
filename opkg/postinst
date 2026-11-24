@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+directory="${PKG_ROOT%/}/opt/keenetic-geosite-sync"
+config="$directory/config.json"
+backup="$config.pre-upgrade"
+
+if [ -e "$config" ] || [ -L "$config" ]; then
+  if [ -f "$backup" ] && cmp -s "$config" "$backup"; then
+    rm -f "$backup"
+  fi
+elif [ -f "$backup" ] || [ -L "$backup" ]; then
+  mv "$backup" "$config"
+else
+  mkdir -p "$directory"
+  (umask 022 && set -C && printf '{}\n' > "$config")
+fi

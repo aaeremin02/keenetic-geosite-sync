@@ -44,11 +44,11 @@ opkg update
 opkg upgrade keenetic-geosite-sync
 ```
 
-`opkg` сохраняет изменённый пользователем `config.json`.
+При обновлении сохраняется существующий `config.json`.
 
 ## Настройка
 
-Пакет создаёт `/opt/keenetic-geosite-sync/config.json` с содержимым `{}`. Добавьте списки, которыми должна управлять команда. Пример синхронизирует YouTube, Google Play и IPv4-подсети Telegram.
+Установщик создаёт `/opt/keenetic-geosite-sync/config.json` с содержимым `{}`, если файла ещё нет. Добавьте списки, которыми должна управлять команда. Пример синхронизирует YouTube, Google Play и IPv4-подсети Telegram.
 
 ```json
 {
