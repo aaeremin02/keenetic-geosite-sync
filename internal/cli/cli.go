@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"keenetic-geosite-sync/internal/config"
@@ -127,15 +128,18 @@ func clean(ctx context.Context, cfg config.Config, state keenetic.State, router 
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	printMode(out, saver == nil)
-	if len(plan.Groups) == 0 {
-		fmt.Fprintln(out, "No groups selected for cleanup")
+	if saver == nil {
+		fmt.Fprintln(out, "Dry run")
 	}
 	for _, target := range plan.Groups {
 		fmt.Fprintf(out, "  remove group %s\n", target.Name)
 	}
 	for _, warning := range plan.Warnings {
 		fmt.Fprintf(out, "  note: %s\n", warning)
+	}
+	if len(plan.Groups) == 0 {
+		fmt.Fprintln(out, "No groups selected for cleanup")
+		return 0
 	}
 	if saver == nil {
 		return 0
@@ -176,52 +180,48 @@ func defaultConfigPath() string {
 	return "config.json"
 }
 
-func printMode(out io.Writer, preview bool) {
-	if preview {
-		fmt.Fprintln(out, "Dry run")
-	} else {
-		fmt.Fprintln(out, "Applying plan")
-	}
+func addsRoute(route syncer.RoutePlan) bool {
+	return !route.Exists && !route.Disabled
 }
 
 func printPlan(out io.Writer, plan syncer.Plan, preview bool) {
-	printMode(out, preview)
-	if len(plan.Lists) == 0 {
-		fmt.Fprintln(out, "No domain lists selected")
+	if preview {
+		fmt.Fprintln(out, "Dry run")
 	}
+	changed := false
 	for _, list := range plan.Lists {
-		fmt.Fprintf(out, "%s (skipped %d keyword, %d regexp", list.Name, list.SkippedKeyword, list.SkippedRegexp)
-		if list.SkippedIPv6 > 0 {
-			fmt.Fprintf(out, ", %d IPv6", list.SkippedIPv6)
-		}
-		fmt.Fprintln(out, ")")
 		for _, group := range list.Groups {
+			change := group.Change
+			if change == "keep" {
+				if !slices.ContainsFunc(group.Routes, addsRoute) {
+					continue
+				}
+				change = "update"
+			}
+			changed = true
 			added, removed := group.DomainChanges()
-			fmt.Fprintf(out, "  %s %s (%q, %d entries", group.Change, group.Name, group.Description, len(group.Domains))
+			fmt.Fprintf(out, "  %s %s (%q, %d entries", change, group.Name, group.Description, len(group.Domains))
 			if added != 0 || removed != 0 {
 				fmt.Fprintf(out, ", +%d -%d", added, removed)
 			}
 			fmt.Fprintln(out, ")")
 			for _, route := range group.Routes {
-				action := "add"
-				switch {
-				case route.Exists:
-					action = "keep"
-				case route.Disabled:
-					action = "skip disabled template for"
+				if !addsRoute(route) {
+					continue
 				}
-				args := []string{route.Gateway, route.Interface, strings.Join(route.Options, " ")}
-				if route.Disabled {
-					args = append(args, "disabled")
-				}
-				fmt.Fprintf(out, "    %s route %s\n", action, strings.Join(strings.Fields(strings.Join(args, " ")), " "))
+				args := append([]string{route.Gateway, route.Interface}, route.Options...)
+				fmt.Fprintf(out, "    add route %s\n", strings.Join(strings.Fields(strings.Join(args, " ")), " "))
 			}
 		}
 		for _, group := range list.Stale {
+			changed = true
 			fmt.Fprintf(out, "  remove stale group %s after successful update\n", group.Name)
 		}
 	}
 	for _, warning := range plan.Warnings {
 		fmt.Fprintf(out, "  note: %s\n", warning)
+	}
+	if preview && !changed {
+		fmt.Fprintln(out, "No changes")
 	}
 }

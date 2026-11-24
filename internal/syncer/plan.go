@@ -20,12 +20,8 @@ type Plan struct {
 }
 
 type ListPlan struct {
-	Name           string
-	Groups         []GroupPlan
-	Stale          []Removal
-	SkippedKeyword int
-	SkippedRegexp  int
-	SkippedIPv6    int
+	Groups []GroupPlan
+	Stale  []Removal
 }
 
 type GroupPlan struct {
@@ -165,9 +161,7 @@ func requestedKey(requested map[string]config.List, title string) (string, bool)
 }
 
 func planList(cfg config.Config, state keenetic.State, item target, result lists.Result) (ListPlan, []string, error) {
-	list := ListPlan{
-		Name: item.title, SkippedKeyword: result.SkippedKeyword, SkippedRegexp: result.SkippedRegexp, SkippedIPv6: result.SkippedIPv6,
-	}
+	var list ListPlan
 	baseRoutes := state.Routes[item.name]
 	chunks := (len(result.Entries)-1)/cfg.MaxEntriesPerGroup + 1
 

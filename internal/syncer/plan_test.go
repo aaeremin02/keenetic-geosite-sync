@@ -172,8 +172,7 @@ dns-proxy route object-group domain-list3 Wireguard0 auto
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Lists) != 2 || plan.Lists[0].Groups[0].Name != "domain-list3" ||
-		plan.Lists[0].SkippedIPv6 != 1 || plan.Lists[1].Groups[0].Name != "domain-list5" {
+	if len(plan.Lists) != 2 || plan.Lists[0].Groups[0].Name != "domain-list3" || plan.Lists[1].Groups[0].Name != "domain-list5" {
 		t.Fatalf("lists should use configured sources and existing group names: %+v", plan.Lists)
 	}
 

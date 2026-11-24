@@ -28,6 +28,31 @@ func TestValidateWorksWithoutNDMC(t *testing.T) {
 	}
 }
 
+func TestPrintPlanShowsRouteChangeForUnchangedGroup(t *testing.T) {
+	groups := []syncer.GroupPlan{
+		{Name: "domain-list0", Description: "Discord", Change: "keep"},
+		{Name: "domain-list1", Description: "Telegram", Change: "keep", Domains: []string{"192.0.2.1"}},
+	}
+	route := keenetic.Route{Interface: "Wireguard0", Options: []string{"auto"}}
+	groups[0].Routes = []syncer.RoutePlan{{Route: route, Exists: true}}
+	groups[1].Routes = []syncer.RoutePlan{{Route: route}}
+	plan := syncer.Plan{Lists: []syncer.ListPlan{{Groups: groups}}}
+
+	var out bytes.Buffer
+	printPlan(&out, plan, false)
+	want := "  update domain-list1 (\"Telegram\", 1 entries)\n    add route Wireguard0 auto\n"
+	if out.String() != want {
+		t.Fatalf("apply plan output = %q, want %q", &out, want)
+	}
+
+	groups[1].Routes[0].Exists = true
+	out.Reset()
+	printPlan(&out, plan, true)
+	if want := "Dry run\nNo changes\n"; out.String() != want {
+		t.Fatalf("dry run output = %q, want %q", &out, want)
+	}
+}
+
 func TestPendingSaveRetriesWithoutReapplyingChanges(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "save-state")
 	lock, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
