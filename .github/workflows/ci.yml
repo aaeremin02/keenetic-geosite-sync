@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Check formatting
+        run: test -z "$(gofmt -l cmd internal)"
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Build Entware packages and feed
+        run: |
+          opkg/build.sh 0.0.0 build/ci
+          opkg/feed.sh build/ci-feed build/ci/*_aarch64-3.10.ipk build/ci/*_mipsel-3.4.ipk
