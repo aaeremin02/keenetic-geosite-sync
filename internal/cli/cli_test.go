@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"keenetic-geosite-sync/internal/config"
 	"keenetic-geosite-sync/internal/keenetic"
+	"keenetic-geosite-sync/internal/lists"
 	"keenetic-geosite-sync/internal/syncer"
 )
 
@@ -40,7 +42,7 @@ func TestPrintPlanShowsRouteChangeForUnchangedGroup(t *testing.T) {
 
 	var out bytes.Buffer
 	printPlan(&out, plan, false)
-	want := "  update domain-list1 (\"Telegram\", 1 entries)\n    add route Wireguard0 auto\n"
+	want := "Add DNS route for \"Telegram\" (domain-list1) via Wireguard0 (auto)\n"
 	if out.String() != want {
 		t.Fatalf("apply plan output = %q, want %q", &out, want)
 	}
@@ -49,6 +51,28 @@ func TestPrintPlanShowsRouteChangeForUnchangedGroup(t *testing.T) {
 	out.Reset()
 	printPlan(&out, plan, true)
 	if want := "Dry run\nNo changes\n"; out.String() != want {
+		t.Fatalf("dry run output = %q, want %q", &out, want)
+	}
+}
+
+func TestPrintPlanDescribesEntryChanges(t *testing.T) {
+	cfg := config.Config{
+		Prefix: "domain-list", MaxEntriesPerGroup: 300,
+		Lists: []config.List{{Name: "X", Source: config.SourcePlain}},
+	}
+	state := keenetic.State{Groups: map[string]keenetic.Group{
+		"domain-list4": {Description: "X", Domains: []string{"x.com"}},
+	}}
+	plan, err := syncer.BuildPlan(t.Context(), cfg, state, func(context.Context, config.List) (lists.Result, error) {
+		return lists.Result{Entries: []string{"x.com", "t.co"}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	printPlan(&out, plan, true)
+	want := "Dry run\nUpdate \"X\" (domain-list4) — add 1 entry, 2 entries after sync\n"
+	if out.String() != want {
 		t.Fatalf("dry run output = %q, want %q", &out, want)
 	}
 }

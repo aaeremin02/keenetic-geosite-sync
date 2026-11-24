@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"keenetic-geosite-sync/internal/config"
@@ -132,7 +131,7 @@ func clean(ctx context.Context, cfg config.Config, state keenetic.State, router 
 		fmt.Fprintln(out, "Dry run")
 	}
 	for _, target := range plan.Groups {
-		fmt.Fprintf(out, "  remove group %s\n", target.Name)
+		fmt.Fprintf(out, "Remove group %s\n", target.Name)
 	}
 	for _, warning := range plan.Warnings {
 		fmt.Fprintf(out, "  note: %s\n", warning)
@@ -162,7 +161,7 @@ func finishApply(ctx context.Context, saver *configurationSaver, out, stderr io.
 		fmt.Fprintf(stderr, "Router changes verified (%d commands), but configuration persistence failed: %v\n", result.Commands, err)
 		return 1
 	}
-	fmt.Fprintf(out, "Configuration saved (%d commands)\n", result.Commands)
+	fmt.Fprintln(out, "Configuration saved")
 	return 0
 }
 
@@ -180,8 +179,11 @@ func defaultConfigPath() string {
 	return "config.json"
 }
 
-func addsRoute(route syncer.RoutePlan) bool {
-	return !route.Exists && !route.Disabled
+func entryCount(count int) string {
+	if count == 1 {
+		return "1 entry"
+	}
+	return fmt.Sprintf("%d entries", count)
 }
 
 func printPlan(out io.Writer, plan syncer.Plan, preview bool) {
@@ -191,31 +193,30 @@ func printPlan(out io.Writer, plan syncer.Plan, preview bool) {
 	changed := false
 	for _, list := range plan.Lists {
 		for _, group := range list.Groups {
-			change := group.Change
-			if change == "keep" {
-				if !slices.ContainsFunc(group.Routes, addsRoute) {
-					continue
-				}
-				change = "update"
+			label := fmt.Sprintf("%q (%s)", group.Description, group.Name)
+			switch group.Change {
+			case "create":
+				changed = true
+				fmt.Fprintf(out, "Create %s with %s\n", label, entryCount(len(group.Domains)))
+			case "update":
+				changed = true
+				printGroupUpdate(out, group, label)
 			}
-			changed = true
-			added, removed := group.DomainChanges()
-			fmt.Fprintf(out, "  %s %s (%q, %d entries", change, group.Name, group.Description, len(group.Domains))
-			if added != 0 || removed != 0 {
-				fmt.Fprintf(out, ", +%d -%d", added, removed)
-			}
-			fmt.Fprintln(out, ")")
 			for _, route := range group.Routes {
-				if !addsRoute(route) {
+				if route.Exists || route.Disabled {
 					continue
 				}
-				args := append([]string{route.Gateway, route.Interface}, route.Options...)
-				fmt.Fprintf(out, "    add route %s\n", strings.Join(strings.Fields(strings.Join(args, " ")), " "))
+				changed = true
+				destination := strings.TrimSpace(route.Gateway + " " + route.Interface)
+				if len(route.Options) > 0 {
+					destination += " (" + strings.Join(route.Options, ", ") + ")"
+				}
+				fmt.Fprintf(out, "Add DNS route for %s via %s\n", label, destination)
 			}
 		}
 		for _, group := range list.Stale {
 			changed = true
-			fmt.Fprintf(out, "  remove stale group %s after successful update\n", group.Name)
+			fmt.Fprintf(out, "Remove obsolete group %s after updating the active groups\n", group.Name)
 		}
 	}
 	for _, warning := range plan.Warnings {
@@ -224,4 +225,20 @@ func printPlan(out io.Writer, plan syncer.Plan, preview bool) {
 	if preview && !changed {
 		fmt.Fprintln(out, "No changes")
 	}
+}
+
+func printGroupUpdate(out io.Writer, group syncer.GroupPlan, label string) {
+	added, removed := group.DomainChanges()
+	var changes []string
+	if added > 0 {
+		changes = append(changes, "add "+entryCount(added))
+	}
+	if removed > 0 {
+		changes = append(changes, "remove "+entryCount(removed))
+	}
+	if len(changes) == 0 {
+		fmt.Fprintf(out, "Rename group %s to %q\n", group.Name, group.Description)
+		return
+	}
+	fmt.Fprintf(out, "Update %s — %s, %s after sync\n", label, strings.Join(changes, " and "), entryCount(len(group.Domains)))
 }

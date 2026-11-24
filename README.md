@@ -111,11 +111,10 @@ keenetic-geosite-sync sync
 
 ## Запуск по расписанию
 
-Установите `cron` в Entware и создайте каталог для журнала.
+Установите `cron` в Entware.
 
 ```sh
 opkg install cron
-mkdir -p /opt/var/log
 ```
 
 Эта запись в `/opt/etc/crontab` запускает синхронизацию по субботам в 04:00.
@@ -123,8 +122,6 @@ mkdir -p /opt/var/log
 ```cron
 0 4 * * 6 /opt/bin/keenetic-geosite-sync sync
 ```
-
-В журнал дописываются план, результат и ошибки каждого запуска. CLI блокирует одновременное применение из cron и терминала.
 
 ## Очистка и удаление пакета
 
