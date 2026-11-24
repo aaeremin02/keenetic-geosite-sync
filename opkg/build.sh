@@ -30,12 +30,14 @@ build_package() {
   fi
   env "${target[@]}" go build -trimpath -ldflags='-s -w' \
     -o "$data/opt/bin/$package" ./cmd/keenetic-geosite-sync
+  install -D -m 0644 LICENSE "$data/opt/share/doc/$package/LICENSE"
 
   cat > "$control/control" <<CONTROL
 Package: $package
 Version: $version-1
 Architecture: $arch
 Maintainer: Keenetic Geosite Sync contributors
+License: MIT
 Section: net
 Priority: optional
 Depends: ca-bundle
