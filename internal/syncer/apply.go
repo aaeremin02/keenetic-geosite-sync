@@ -13,10 +13,16 @@ type Router interface {
 	RunCommand(context.Context, string) error
 }
 
-func ApplySync(ctx context.Context, plan Plan, router Router) (int, error) {
+type ApplyResult struct {
+	Commands    int
+	Fingerprint keenetic.Fingerprint
+}
+
+func ApplySync(ctx context.Context, plan Plan, router Router) (ApplyResult, error) {
+	var result ApplyResult
 	commands, err := updateCommands(plan)
 	if err != nil {
-		return 0, err
+		return result, err
 	}
 	var removals []Removal
 	for _, list := range plan.Lists {
@@ -25,43 +31,47 @@ func ApplySync(ctx context.Context, plan Plan, router Router) (int, error) {
 
 	deletions, err := deleteCommands(removals)
 	if err != nil || len(commands)+len(deletions) == 0 {
-		return 0, err
+		return result, err
 	}
 
-	applied, err := runCommands(ctx, router, commands)
+	result.Commands, err = runCommands(ctx, router, commands)
 	if err != nil {
-		return applied, err
+		return result, err
 	}
 	state, err := router.ReadRunningConfig(ctx)
 	if err != nil {
-		return applied, fmt.Errorf("check updated groups: %w", err)
+		return result, fmt.Errorf("check updated groups: %w", err)
 	}
 	if err := verifySync(plan, state); err != nil {
-		return applied, err
+		return result, err
 	}
 
-	deleted, err := applyDeletions(ctx, router, state, removals, deletions)
-	applied += deleted
+	deleted, final, err := applyDeletions(ctx, router, state, removals, deletions)
+	result.Commands += deleted
 	if err != nil {
-		return applied, err
+		return result, err
 	}
-	return applied, router.RunCommand(ctx, "system configuration save")
+	result.Fingerprint = final.Fingerprint
+	return result, nil
 }
 
-func ApplyCleanup(ctx context.Context, plan CleanupPlan, router Router) (int, error) {
+func ApplyCleanup(ctx context.Context, plan CleanupPlan, router Router) (ApplyResult, error) {
+	var result ApplyResult
 	deletions, err := deleteCommands(plan.Groups)
 	if err != nil || len(deletions) == 0 {
-		return 0, err
+		return result, err
 	}
 	state, err := router.ReadRunningConfig(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("check groups before cleanup: %w", err)
+		return result, fmt.Errorf("check groups before cleanup: %w", err)
 	}
-	applied, err := applyDeletions(ctx, router, state, plan.Groups, deletions)
+	deleted, final, err := applyDeletions(ctx, router, state, plan.Groups, deletions)
+	result.Commands = deleted
 	if err != nil {
-		return applied, err
+		return result, err
 	}
-	return applied, router.RunCommand(ctx, "system configuration save")
+	result.Fingerprint = final.Fingerprint
+	return result, nil
 }
 
 func updateCommands(plan Plan) ([]string, error) {
@@ -182,27 +192,27 @@ func verifySync(plan Plan, state keenetic.State) error {
 	return nil
 }
 
-func applyDeletions(ctx context.Context, router Router, state keenetic.State, removals []Removal, commands []string) (int, error) {
+func applyDeletions(ctx context.Context, router Router, state keenetic.State, removals []Removal, commands []string) (int, keenetic.State, error) {
 	if len(commands) == 0 {
-		return 0, nil
+		return 0, state, nil
 	}
 	for _, removal := range removals {
 		if !removal.matches(state) {
-			return 0, fmt.Errorf("group %s or its DNS routes changed after the plan was built", removal.Name)
+			return 0, state, fmt.Errorf("group %s or its DNS routes changed after the plan was built", removal.Name)
 		}
 	}
 	applied, err := runCommands(ctx, router, commands)
 	if err != nil {
-		return applied, err
+		return applied, state, err
 	}
 	state, err = router.ReadRunningConfig(ctx)
 	if err != nil {
-		return applied, fmt.Errorf("check removed groups: %w", err)
+		return applied, state, fmt.Errorf("check removed groups: %w", err)
 	}
 	for _, removal := range removals {
 		if _, ok := state.Groups[removal.Name]; ok || len(state.Routes[removal.Name]) > 0 {
-			return applied, fmt.Errorf("group %s or its DNS routes are still present", removal.Name)
+			return applied, state, fmt.Errorf("group %s or its DNS routes are still present", removal.Name)
 		}
 	}
-	return applied, nil
+	return applied, state, nil
 }

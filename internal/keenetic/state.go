@@ -1,15 +1,19 @@
 package keenetic
 
 import (
+	"crypto/sha256"
 	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
 )
 
+type Fingerprint [sha256.Size]byte
+
 type State struct {
-	Groups map[string]Group
-	Routes map[string][]Route
+	Groups      map[string]Group
+	Routes      map[string][]Route
+	Fingerprint Fingerprint
 }
 
 type Group struct {
@@ -32,6 +36,7 @@ func (route Route) Equal(other Route) bool {
 
 func ParseRunningConfig(text string) State {
 	state := State{Groups: make(map[string]Group), Routes: make(map[string][]Route)}
+	hash := sha256.New()
 	var groupName, lastRouteGroup string
 	var group Group
 	inDNSProxy := false
@@ -49,6 +54,10 @@ func ParseRunningConfig(text string) State {
 		indented := strings.HasPrefix(raw, " ") || strings.HasPrefix(raw, "\t") ||
 			strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
 		line = strings.TrimSpace(line)
+		// Ignore informational comments, but retain nesting and command order.
+		if !strings.HasPrefix(line, "!") || line == "!" {
+			hash.Write([]byte(strings.TrimRight(raw, " \t\r") + "\n"))
+		}
 		command := strings.ToLower(fields[0])
 
 		// A top-level command or block separator closes the current group.
@@ -137,6 +146,7 @@ func ParseRunningConfig(text string) State {
 	if groupName != "" {
 		state.Groups[groupName] = group
 	}
+	copy(state.Fingerprint[:], hash.Sum(nil))
 	return state
 }
 

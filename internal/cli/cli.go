@@ -19,19 +19,22 @@ func Run(ctx context.Context, args []string, out, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
 		fmt.Fprintln(out, "Usage: keenetic-geosite-sync sync [--dry-run] [--config PATH]")
 		fmt.Fprintln(out, "       keenetic-geosite-sync clean (--dry-run | --apply) [--config PATH]")
+		fmt.Fprintln(out, "       keenetic-geosite-sync validate [--config PATH]")
 		return 0
 	}
 
 	command := args[0]
-	if command != "sync" && command != "clean" {
+	if command != "sync" && command != "clean" && command != "validate" {
 		fmt.Fprintf(stderr, "unknown command %q; see --help\n", command)
 		return 2
 	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	path := flags.String("config", defaultConfigPath(), "path to config.json")
-	dryRun := flags.Bool("dry-run", false, "show planned changes")
-	var apply bool
+	var dryRun, apply bool
+	if command != "validate" {
+		flags.BoolVar(&dryRun, "dry-run", false, "show planned changes")
+	}
 	if command == "clean" {
 		flags.BoolVar(&apply, "apply", false, "remove groups selected by the cleanup plan")
 	}
@@ -44,7 +47,7 @@ func Run(ctx context.Context, args []string, out, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "unexpected arguments; see %s --help\n", command)
 		return 2
 	}
-	if command == "clean" && *dryRun == apply {
+	if command == "clean" && dryRun == apply {
 		fmt.Fprintln(stderr, "clean requires exactly one of --dry-run or --apply")
 		return 2
 	}
@@ -54,31 +57,49 @@ func Run(ctx context.Context, args []string, out, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	preview := *dryRun || cfg.DryRun
-	if !preview {
+	if command == "validate" {
+		fmt.Fprintln(out, "Configuration valid")
+		return 0
+	}
+
+	router := keenetic.Client{}
+	var saver *configurationSaver
+	if !dryRun && !cfg.DryRun {
 		lock, err := acquireLock()
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
 		defer lock.Close()
+
+		saver = &configurationSaver{lock, router.RunCommand}
 	}
 
-	router := keenetic.Client{}
 	state, err := router.ReadRunningConfig(ctx)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
 
-	if command == "clean" {
-		return clean(ctx, cfg, state, router, preview, out, stderr)
+	if saver != nil {
+		message, err := saver.resume(ctx, state.Fingerprint)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		if message != "" {
+			fmt.Fprintln(out, message)
+		}
 	}
-	return sync(ctx, cfg, state, router, preview, out, stderr)
+
+	if command == "clean" {
+		return clean(ctx, cfg, state, router, saver, out, stderr)
+	}
+	return sync(ctx, cfg, state, router, saver, out, stderr)
 }
 
 func sync(ctx context.Context, cfg config.Config, state keenetic.State, router syncer.Router,
-	preview bool, out, stderr io.Writer,
+	saver *configurationSaver, out, stderr io.Writer,
 ) int {
 	resolver, err := lists.NewResolver(cfg)
 	if err != nil {
@@ -90,23 +111,23 @@ func sync(ctx context.Context, cfg config.Config, state keenetic.State, router s
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	printPlan(out, plan, preview)
-	if preview {
+	printPlan(out, plan, saver == nil)
+	if saver == nil {
 		return 0
 	}
 	applied, err := syncer.ApplySync(ctx, plan, router)
-	return report(out, stderr, applied, err)
+	return finishApply(ctx, saver, out, stderr, applied, err)
 }
 
 func clean(ctx context.Context, cfg config.Config, state keenetic.State, router syncer.Router,
-	preview bool, out, stderr io.Writer,
+	saver *configurationSaver, out, stderr io.Writer,
 ) int {
 	plan, err := syncer.BuildCleanup(cfg, state)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	printMode(out, preview)
+	printMode(out, saver == nil)
 	if len(plan.Groups) == 0 {
 		fmt.Fprintln(out, "No groups selected for cleanup")
 	}
@@ -116,24 +137,28 @@ func clean(ctx context.Context, cfg config.Config, state keenetic.State, router 
 	for _, warning := range plan.Warnings {
 		fmt.Fprintf(out, "  note: %s\n", warning)
 	}
-	if preview {
+	if saver == nil {
 		return 0
 	}
 	applied, err := syncer.ApplyCleanup(ctx, plan, router)
-	return report(out, stderr, applied, err)
+	return finishApply(ctx, saver, out, stderr, applied, err)
 }
 
-func report(out, stderr io.Writer, completed int, err error) int {
+func finishApply(ctx context.Context, saver *configurationSaver, out, stderr io.Writer, result syncer.ApplyResult, err error) int {
 	if err != nil {
-		fmt.Fprintf(stderr, "Stopped after %d successful commands: %v\n", completed, err)
+		fmt.Fprintf(stderr, "Stopped after %d successful commands: %v\n", result.Commands, err)
 		fmt.Fprintln(stderr, "Check the running configuration before retrying.")
 		return 1
 	}
-	if completed == 0 {
+	if result.Commands == 0 {
 		fmt.Fprintln(out, "Already up to date")
-	} else {
-		fmt.Fprintf(out, "Configuration saved (%d commands)\n", completed)
+		return 0
 	}
+	if err := saver.save(ctx, result.Fingerprint); err != nil {
+		fmt.Fprintf(stderr, "Router changes verified (%d commands), but configuration persistence failed: %v\n", result.Commands, err)
+		return 1
+	}
+	fmt.Fprintf(out, "Configuration saved (%d commands)\n", result.Commands)
 	return 0
 }
 

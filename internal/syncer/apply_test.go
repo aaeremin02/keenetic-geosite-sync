@@ -67,7 +67,6 @@ dns-proxy
 	const add = "object-group fqdn kgs0 include new.example"
 	const remove = "no object-group fqdn kgs0 include old.example"
 	const deleteChunk = "no object-group fqdn kgs0-2"
-	const save = "system configuration save"
 	updated := keenetic.ParseRunningConfig(`
 object-group fqdn kgs0
  description "YouTube"
@@ -95,7 +94,7 @@ dns-proxy
 	}{
 		{"ndmc error", fakeRouter{fail: add}, []string{add}, "refused"},
 		{"silent rejection", fakeRouter{reply: []keenetic.State{initial}}, []string{add, remove}, "did not apply"},
-		{"verified update", fakeRouter{reply: []keenetic.State{updated, final}}, []string{add, remove, deleteChunk, save}, ""},
+		{"verified update", fakeRouter{reply: []keenetic.State{updated, final}}, []string{add, remove, deleteChunk}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := ApplySync(t.Context(), plan, &tc.router)
@@ -112,8 +111,8 @@ dns-proxy
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls, err := ApplySync(t.Context(), repeat, &fakeRouter{}); err != nil || calls != 0 {
-		t.Fatalf("repeat sync changed configuration or failed: %d, %v", calls, err)
+	if result, err := ApplySync(t.Context(), repeat, &fakeRouter{}); err != nil || result.Commands != 0 {
+		t.Fatalf("repeat sync changed configuration or failed: %d, %v", result.Commands, err)
 	}
 
 	initial.Groups["kgs9"] = keenetic.Group{Description: "Facebook"}
@@ -124,8 +123,8 @@ dns-proxy
 	router := fakeRouter{reply: []keenetic.State{initial, {
 		Groups: map[string]keenetic.Group{"kgs9": initial.Groups["kgs9"]},
 	}}}
-	if count, err := ApplyCleanup(t.Context(), cleanup, &router); err != nil || count != 2 ||
-		!slices.Equal(router.commands, []string{deleteChunk, "no object-group fqdn kgs0", save}) {
-		t.Fatalf("cleanup did not verify and save the scoped deletion: %q, %d, %v", router.commands, count, err)
+	if result, err := ApplyCleanup(t.Context(), cleanup, &router); err != nil || result.Commands != 2 ||
+		!slices.Equal(router.commands, []string{deleteChunk, "no object-group fqdn kgs0"}) {
+		t.Fatalf("cleanup did not verify the scoped deletion: %q, %d, %v", router.commands, result.Commands, err)
 	}
 }
