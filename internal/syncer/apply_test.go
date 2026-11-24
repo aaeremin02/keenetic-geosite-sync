@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -126,5 +127,95 @@ dns-proxy
 	if result, err := ApplyCleanup(t.Context(), cleanup, &router); err != nil || result.Commands != 2 ||
 		!slices.Equal(router.commands, []string{deleteChunk, "no object-group fqdn kgs0"}) {
 		t.Fatalf("cleanup did not verify the scoped deletion: %q, %d, %v", router.commands, result.Commands, err)
+	}
+}
+
+func TestApplySyncPrunesRemovedListsWithinDedicatedPrefix(t *testing.T) {
+	state := keenetic.ParseRunningConfig(`
+object-group fqdn kgs
+ description "Outside prefix"
+!
+object-group fqdn kgs-4
+ description "Active"
+ include active.example
+!
+object-group fqdn kgs-1
+ description "Removed 1"
+ include old.example
+!
+object-group fqdn kgs-1-2
+ description "Removed 2"
+ include old-part.example
+!
+object-group fqdn kgs-1-3
+ description "Removed 3"
+ include manual-part.example
+!
+object-group fqdn kgs-2
+ description "With exclusions"
+ exclude keep.example
+!
+object-group fqdn kgs-3-2
+ description "Orphan 2"
+!
+object-group fqdn kgs-manual
+ description "Manual"
+!
+object-group fqdn domain-list0
+ description "Web UI"
+!
+object-group fqdn domain-name-list-0
+ description "New Web UI"
+!
+dns-proxy
+ route object-group kgs-1 Wireguard0 auto
+ route object-group kgs-1-2 Wireguard0 auto
+ route object-group kgs-1-3 Manual0 auto
+!
+`)
+	cfg := config.Config{Prefix: "kgs-", MaxEntriesPerGroup: 300, Lists: []config.List{{Name: "Active"}}}
+	resolve := func(context.Context, config.List) (lists.Result, error) {
+		return lists.Result{Entries: []string{"active.example"}}, nil
+	}
+	plan, err := BuildPlan(t.Context(), cfg, state, resolve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Pruned) != 2 || plan.Pruned[0].Name != "kgs-1-2" || plan.Pruned[1].Name != "kgs-1" || len(plan.Warnings) != 2 {
+		t.Fatalf("unexpected removal plan: %+v", plan)
+	}
+
+	edited := state
+	edited.Routes = maps.Clone(state.Routes)
+	edited.Routes["kgs-1"] = []keenetic.Route{{Interface: "Manual0"}}
+	router := fakeRouter{reply: []keenetic.State{edited}}
+	if _, err := ApplySync(t.Context(), plan, &router); err == nil || len(router.commands) != 0 {
+		t.Fatalf("a route changed after planning, commands = %q, error = %v", router.commands, err)
+	}
+
+	final := state
+	final.Groups, final.Routes = maps.Clone(state.Groups), maps.Clone(state.Routes)
+	for _, prune := range plan.Pruned {
+		delete(final.Groups, prune.Name)
+		delete(final.Routes, prune.Name)
+	}
+	router = fakeRouter{reply: []keenetic.State{state, final}}
+	result, err := ApplySync(t.Context(), plan, &router)
+	want := []string{"no object-group fqdn kgs-1-2", "no object-group fqdn kgs-1"}
+	if err != nil || result.Commands != len(want) || !slices.Equal(router.commands, want) {
+		t.Fatalf("commands = %q, wanted %q, error = %v", router.commands, want, err)
+	}
+
+	cfg.Lists = nil
+	empty, err := BuildPlan(t.Context(), cfg, final, nil)
+	if err != nil || len(empty.Pruned) != 1 || empty.Pruned[0].Name != "kgs-4" {
+		t.Fatalf("removing the last list should prune its group: %+v, %v", empty, err)
+	}
+	for _, legacy := range []string{"domain-list", "domain-name-list-"} {
+		cfg.Prefix = legacy
+		plan, err := BuildPlan(t.Context(), cfg, state, nil)
+		if err != nil || len(plan.Pruned) != 0 {
+			t.Fatalf("built-in prefix %q should protect Web UI groups: %+v, %v", legacy, plan, err)
+		}
 	}
 }

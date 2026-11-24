@@ -28,6 +28,7 @@ func ApplySync(ctx context.Context, plan Plan, router Router) (ApplyResult, erro
 	for _, list := range plan.Lists {
 		removals = append(removals, list.Stale...)
 	}
+	removals = append(removals, plan.Pruned...)
 
 	deletions, err := deleteCommands(removals)
 	if err != nil || len(commands)+len(deletions) == 0 {

@@ -16,6 +16,7 @@ import (
 
 type Plan struct {
 	Lists    []ListPlan
+	Pruned   []Removal
 	Warnings []string
 }
 
@@ -79,6 +80,9 @@ func BuildPlan(ctx context.Context, cfg config.Config, state keenetic.State,
 		plan.Lists = append(plan.Lists, list)
 		plan.Warnings = append(plan.Warnings, warnings...)
 	}
+	pruned, warnings := planPrunedGroups(cfg.Prefix, state, targets)
+	plan.Pruned = pruned
+	plan.Warnings = append(plan.Warnings, warnings...)
 	return plan, nil
 }
 
@@ -98,7 +102,7 @@ func selectTargets(cfg config.Config, state keenetic.State) ([]target, error) {
 		if !strings.HasPrefix(name, cfg.Prefix) {
 			continue
 		}
-		if part := numberedName.FindStringSubmatch(name); part != nil {
+		if part := numberedName.FindStringSubmatch(name); part != nil && strings.HasPrefix(part[1], cfg.Prefix) {
 			usedNames[part[1]] = true
 			if _, parent := state.Groups[part[1]]; parent {
 				continue

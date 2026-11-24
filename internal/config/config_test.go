@@ -26,8 +26,8 @@ func TestLoadExpandsV2FlyNamesAndKeepsPlainSource(t *testing.T) {
 		{Name: "Google-play", Source: SourceV2Fly, URL: v2flyURL + "google-play"},
 		{Name: "Подсети Telegram", Source: SourcePlain, URL: "https://example.net/cidr.txt"},
 	}
-	if err != nil || cfg.IPv6 || !slices.Equal(cfg.Lists, want) {
-		t.Fatalf("configured lists = %+v, IPv6 = %t, error = %v", cfg.Lists, cfg.IPv6, err)
+	if err != nil || cfg.Prefix != "kgs-" || cfg.IPv6 || !slices.Equal(cfg.Lists, want) {
+		t.Fatalf("configured lists = %+v, prefix = %q, IPv6 = %t, error = %v", cfg.Lists, cfg.Prefix, cfg.IPv6, err)
 	}
 
 	duplicate := strings.Replace(input, "Подсети Telegram", "YouTube", 1)

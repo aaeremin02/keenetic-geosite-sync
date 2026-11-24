@@ -67,7 +67,7 @@ func Load(path string) (Config, error) {
 	}
 
 	file := fileConfig{Config: Config{
-		Prefix:             "domain-list",
+		Prefix:             "kgs-",
 		TimeoutMS:          20000,
 		Retries:            3,
 		MaxEntriesPerGroup: maxKeeneticGroupEntries,

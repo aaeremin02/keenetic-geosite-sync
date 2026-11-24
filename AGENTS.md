@@ -13,7 +13,7 @@ Keenetic Geosite Sync is a Go CLI for KeeneticOS 5 with Entware. It synchronizes
 ## Behavior to preserve
 
 - Use the same plan for a preview and an apply. Keep previews read-only and serialize operations that change the router.
-- Treat configured lists and the group prefix as the scope for sync and cleanup. Preserve existing DNS routes and their flags when updating groups. Check successful changes before deleting stale parts, and limit deletion to groups with established ownership.
+- Use `kgs-` as the default prefix. During sync, prune groups for removed lists only within the configured prefix and the utility's generated naming scheme. Protect Keenetic's built-in naming patterns. Keep explicit cleanup scoped to configured lists. Preserve existing DNS routes and their flags when updating groups, and verify updates before deletions.
 - Enforce the Keenetic group limit of 300 entries. Apply `ipv6: false` to explicit IPv6 addresses and CIDRs in plain lists.
 - Report partial `ndmc` failures and return a nonzero exit code. Persist only after verifying the applied plan. Retry a pending save only when the running configuration still matches its fingerprint. Keep `validate` independent of `ndmc` and network requests.
 

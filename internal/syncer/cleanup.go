@@ -20,6 +20,10 @@ type Removal struct {
 	routes []keenetic.Route
 }
 
+func (r Removal) Description() string {
+	return r.group.Description
+}
+
 func BuildCleanup(cfg config.Config, state keenetic.State) (CleanupPlan, error) {
 	targets, err := selectTargets(cfg, state)
 	if err != nil {

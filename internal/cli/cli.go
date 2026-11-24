@@ -219,6 +219,10 @@ func printPlan(out io.Writer, plan syncer.Plan, preview bool) {
 			fmt.Fprintf(out, "Remove obsolete group %s after updating the active groups\n", group.Name)
 		}
 	}
+	for _, group := range plan.Pruned {
+		changed = true
+		fmt.Fprintf(out, "Remove %q (%s) because its list is absent from the config\n", group.Description(), group.Name)
+	}
 	for _, warning := range plan.Warnings {
 		fmt.Fprintf(out, "  note: %s\n", warning)
 	}
