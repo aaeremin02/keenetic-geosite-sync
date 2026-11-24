@@ -6,16 +6,29 @@
 
 Команды выполняются в SSH-терминале Entware на роутере. Доступны пакеты для ARM64 (`aarch64-3.10`) и MIPS LE (`mipsel-3.4`). Архитектуру можно посмотреть командой `opkg print-architecture`.
 
-Добавьте репозиторий и установите пакет.
+Перед подключением OPKG-репозитория на GitHub Pages установите `wget` с поддержкой HTTPS и корневые сертификаты. [Поддержка HTTPS в Entware](https://github.com/Entware/Entware/wiki/Using-HTTPS-with-opkg)
+
+```sh
+opkg update
+opkg install ca-certificates wget-ssl
+```
+
+Если в Entware установлен `wget-nossl`, удалите его после установки `wget-ssl`.
+
+```sh
+opkg remove wget-nossl
+```
+
+Добавьте репозиторий для своей архитектуры и установите пакет. В примере выбран ARM64. Для MIPS LE замените `aarch64-3.10` на `mipsel-3.4`.
 
 ```sh
 mkdir -p /opt/etc/opkg
-echo 'src/gz kgs https://aaeremin02.github.io/keenetic-geosite-sync/all' > /opt/etc/opkg/kgs.conf
+echo 'src/gz kgs https://aaeremin02.github.io/keenetic-geosite-sync/aarch64-3.10' > /opt/etc/opkg/kgs.conf
 opkg update
 opkg install keenetic-geosite-sync
 ```
 
-Пакет устанавливает команду в `/opt/bin/keenetic-geosite-sync` и подтягивает `ca-bundle` для проверки HTTPS-сертификатов.
+Пакет устанавливает команду в `/opt/bin/keenetic-geosite-sync` и подтягивает `ca-bundle` для проверки сертификатов при загрузке списков самой программой.
 
 Для ручной установки скачайте `.ipk` под свою архитектуру и скопируйте в `/opt/tmp`. Подставьте имя скачанного файла в команду. [Скачать пакет в GitHub Releases](https://github.com/aaeremin02/keenetic-geosite-sync/releases/latest)
 

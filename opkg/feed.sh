@@ -7,13 +7,12 @@ if [[ $# != 3 ]]; then
 fi
 
 out=$1
-shift
-mkdir -p "$out/all"
+mkdir -p "$out"
 stage=$(mktemp -d "$out/.feed.XXXXXX")
 trap 'rm -rf -- "$stage"' EXIT
 
 write_package() {
-  local file=$1 arch=$2
+  local file=$1 arch=$2 directory=$3
   local filename=${file##*/} control size md5 sha256
   if [[ ! $filename =~ ^keenetic-geosite-sync_[0-9][0-9A-Za-z.+~-]*_[0-9A-Za-z.-]+\.ipk$ ||
         "$filename" != *"_$arch.ipk" ]]; then
@@ -26,7 +25,7 @@ write_package() {
     echo "Package architecture does not match $arch: $filename" >&2
     return 1
   fi
-  cp -- "$file" "$stage/"
+  cp -- "$file" "$directory/"
   size=$(wc -c < "$file")
   md5=$(md5sum < "$file")
   sha256=$(sha256sum < "$file")
@@ -34,38 +33,46 @@ write_package() {
     "$control" "$filename" "$size" "${md5%% *}" "${sha256%% *}"
 }
 
-{
-  write_package "$1" aarch64-3.10
-  write_package "$2" mipsel-3.4
-} > "$stage/Packages"
-gzip -n -c "$stage/Packages" > "$stage/Packages.gz"
+write_feed() {
+  local file=$1 arch=$2
+  local directory="$stage/$arch" filename=${file##*/}
+  mkdir -p "$directory"
+  write_package "$file" "$arch" "$directory" > "$directory/Packages"
+  gzip -n -c "$directory/Packages" > "$directory/Packages.gz"
 
-cat > "$out/index.html" <<'HTML'
+  cat > "$directory/index.html" <<HTML
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Keenetic Geosite Sync packages</title>
+<h1>Entware packages for $arch</h1>
+<ul>
+<li><a href="Packages">Packages</a></li>
+<li><a href="Packages.gz">Packages.gz</a></li>
+<li><a href="$filename">$filename</a></li>
+</ul>
+</html>
+HTML
+}
+
+write_feed "$2" aarch64-3.10
+write_feed "$3" mipsel-3.4
+
+cat > "$stage/index.html" <<'HTML'
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8">
 <title>Keenetic Geosite Sync</title>
 <h1>Keenetic Geosite Sync</h1>
-<a href="all/">Entware packages</a>
+<ul>
+<li><a href="aarch64-3.10/">ARM64</a></li>
+<li><a href="mipsel-3.4/">MIPS LE</a></li>
+</ul>
 </html>
 HTML
 
-{
-  cat <<'HTML'
-<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<title>Keenetic Geosite Sync packages</title>
-<h1>Entware packages</h1>
-<ul>
-<li><a href="Packages">Packages</a></li>
-<li><a href="Packages.gz">Packages.gz</a></li>
-HTML
-  for ipk in "$stage"/*.ipk; do
-    name=${ipk##*/}
-    printf '<li><a href="%s">%s</a></li>\n' "$name" "$name"
-  done
-  printf '</ul>\n</html>\n'
-} > "$stage/index.html"
-
-mv -- "$stage"/* "$out/all/"
+for arch in aarch64-3.10 mipsel-3.4; do
+  mkdir -p "$out/$arch"
+  mv -- "$stage/$arch"/* "$out/$arch/"
+done
+mv -- "$stage/index.html" "$out/"
